@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMA 2026: Working Group Strategy Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chosen Palette: Professional Civic (Primary: Indigo-900, Secondary: Slate-500, Accents: Emerald-500 for success, Amber-500 for warnings/alerts) -->
+    <!-- Application Structure Plan: 
+        ออกแบบให้เป็น "Interactive Field Guide" โดยมีโครงสร้างดังนี้:
+        1. Overview Hero: สรุปภาพรวมยุทธศาสตร์ 6 เขต
+        2. District Navigation: แถบเลือกเขตที่ออกแบบให้ใช้งานง่ายทั้งบนมือถือและเดสก์ท็อป
+        3. Strategic Dashboard: พื้นที่แสดงข้อมูลหลักแบ่งเป็น 3 ส่วน:
+           - Candidate Profile: ข้อมูลผู้สมัครและแกนยุทธศาสตร์หลัก
+           - Subdistrict Drill-down: การ์ดรายละเอียดรายแขวงที่เน้นการนำไปปฏิบัติ (Tactics)
+           - Focus Analysis: กราฟ Radar แสดงน้ำหนักความสำคัญของแต่ละแขวงในเชิงยุทธศาสตร์
+        การเลือกโครงสร้างนี้ช่วยให้ทีมงานหน้างานสามารถค้นหา "สิ่งที่ต้องทำ" ในแขวงที่ตนเองรับผิดชอบได้ทันที (Task-oriented exploration)
+    -->
+    <!-- Visualization & Content Choices: 
+        - Report Info -> Goal: ตีความยุทธศาสตร์เป็นน้ำหนักเชิงตัวเลข -> Viz: Radar Chart (Chart.js) เพื่อให้เห็นว่าผู้สมัครคนนั้นๆ ให้ความสำคัญกับด้านไหนมากที่สุด (เช่น เศรษฐกิจ, สังคม, โครงสร้างพื้นฐาน)
+        - Content Presentation: ใช้ "Action Cards" สำหรับแขวงต่างๆ เพื่อให้ข้อมูลอ่านง่ายและเป็นระเบียบ
+        - Interaction: ผู้ใช้คลิกเลือกเขตเพื่อโหลดข้อมูลใหม่ทั้งหมดแบบ Dynamic (Vanilla JS)
+        - Confirmation: NO SVG graphics used. NO Mermaid JS used. (ใช้ Unicode และ CSS สำหรับไอคอนและกราฟิกตกแต่ง)
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { 
+            font-family: 'Kanit', sans-serif; 
+            background-color: #f1f5f9; 
+            color: #1e293b;
+        }
+        .chart-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 600px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 350px; 
+            max-height: 400px; 
+        }
+        .district-btn-active {
+            background-color: #1e1b4b !important;
+            color: white !important;
+            border-color: #1e1b4b !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .subdistrict-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .subdistrict-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Header Section -->
+    <header class="bg-indigo-950 text-white py-8 px-4 shadow-lg">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="text-center md:text-left">
+                <h1 class="text-3xl md:text-4xl font-bold mb-2">คู่มือยุทธศาสตร์รายเขต/แขวง</h1>
+                <p class="text-indigo-200 text-lg">กลุ่มคนทำงาน - กรุงเทพมหานคร 2569</p>
+            </div>
+            <div class="flex gap-2 bg-indigo-900/50 p-2 rounded-xl border border-indigo-800">
+                <div class="text-center px-4">
+                    <div class="text-2xl font-bold text-emerald-400">6</div>
+                    <div class="text-xs uppercase tracking-wider text-indigo-300">เขตยุทธศาสตร์</div>
+                </div>
+                <div class="w-px bg-indigo-800 h-10 my-auto"></div>
+                <div class="text-center px-4">
+                    <div class="text-2xl font-bold text-amber-400">19</div>
+                    <div class="text-xs uppercase tracking-wider text-indigo-300">แขวงปฏิบัติการ</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Section -->
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-4 overflow-x-auto shadow-sm">
+        <div class="max-w-7xl mx-auto flex gap-3 min-w-max md:justify-center" id="district-nav">
+            <!-- Buttons injected by JS -->
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        
+        <!-- Welcome/Intro Section -->
+        <section id="welcome-section" class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 mb-8 text-center">
+            <div class="text-5xl mb-4">🗳️</div>
+            <h2 class="text-2xl font-bold text-slate-800 mb-3">ยินดีต้อนรับสู่ศูนย์ข้อมูลยุทธศาสตร์ 2569</h2>
+            <p class="text-slate-600 max-w-2xl mx-auto leading-relaxed">
+                กรุณาเลือก <strong>เขตเลือกตั้ง</strong> จากแถบเมนูด้านบน เพื่อดูรายละเอียดแผนปฏิบัติการรายแขวง กลยุทธ์การหาเสียง (Customized Tactics) และประเด็นเร่งด่วนที่ต้องสื่อสารกับคนในพื้นที่
+            </p>
+        </section>
+
+        <!-- Dynamic Content Area (Hidden until selected) -->
+        <div id="content-area" class="hidden">
+            
+            <!-- District Overview Card -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+                <div class="lg:col-span-2 bg-indigo-900 text-white rounded-3xl p-8 relative overflow-hidden shadow-xl">
+                    <div class="relative z-10">
+                        <div class="inline-block px-3 py-1 bg-amber-500 text-slate-900 text-sm font-bold rounded-full mb-4" id="view-district-label">เขต...</div>
+                        <h2 class="text-4xl font-bold mb-2" id="view-candidate-name">ชื่อผู้สมัคร</h2>
+                        <div class="text-xl text-indigo-200 mb-6 flex items-center gap-2">
+                            <span class="bg-white text-indigo-900 font-bold px-2 py-0.5 rounded" id="view-candidate-no">เบอร์...</span>
+                            <span>"</span><span id="view-main-strategy">ยุทธศาสตร์หลัก...</span><span>"</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-indigo-800/50 p-4 rounded-2xl border border-indigo-700">
+                                <h4 class="text-amber-400 font-bold text-sm uppercase mb-1">เป้าหมายหลักพื้นที่</h4>
+                                <p class="text-sm leading-relaxed" id="view-district-goal">คำอธิบายเป้าหมาย...</p>
+                            </div>
+                            <div class="bg-indigo-800/50 p-4 rounded-2xl border border-indigo-700">
+                                <h4 class="text-emerald-400 font-bold text-sm uppercase mb-1">จุดเน้นการสื่อสาร</h4>
+                                <p class="text-sm leading-relaxed" id="view-district-focus">คำอธิบายจุดเน้น...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Decorative Element -->
+                    <div class="absolute -bottom-10 -right-10 text-[200px] leading-none opacity-5 select-none pointer-events-none" id="view-bg-no">#</div>
+                </div>
+
+                <!-- Strategic Balance Chart -->
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span>📊</span> สมดุลประเด็นเชิงพื้นที่ (Strategic Balance)
+                    </h3>
+                    <div class="chart-container">
+                        <canvas id="strategyRadar"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subdistricts Section -->
+            <div class="mb-6 flex items-center justify-between">
+                <div>
+                    <h3 class="text-2xl font-bold text-slate-800">ยุทธศาสตร์รายแขวง</h3>
+                    <p class="text-slate-500">เจาะลึกกลยุทธ์ตามบริบทประชากรในแต่ละพื้นที่</p>
+                </div>
+            </div>
+
+            <div id="subdistricts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Subdistrict Cards injected by JS -->
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="bg-slate-900 text-slate-400 py-10 mt-12 px-4 border-t-4 border-amber-500">
+        <div class="max-w-7xl mx-auto text-center">
+            <p class="mb-2">BMA Council Election Strategy - Confidential Document</p>
+            <p class="text-sm">© 2026 กลุ่มคนทำงาน | "ตัวจริง เพื่อเมืองที่คุณรัก"</p>
+        </div>
+    </footer>
+
+    <script>
+        // Data Structure based on Source Report
+        const strategyData = [
+            {
+                id: 'huai-khwang',
+                district: 'เขตห้วยขวาง',
+                candidate: 'สุวงศ์ จินตรักษ์ (แบงค์)',
+                number: '2',
+                mainStrategy: 'ทวงคืนห้วยขวาง สู่ย่านเศรษฐกิจปลอดภัย',
+                goal: 'เน้นความปลอดภัยและคุณภาพชีวิตพื้นฐาน (เส้นเลือดฝอย) ผสมผสานกับการจัดการสิ่งแวดล้อมคอนโด',
+                focus: 'ความปลอดภัยทางเท้า, น้ำท่วมในซอย, และระบบขยะอัจฉริยะ',
+                chartScores: [85, 70, 90, 60, 75], // Infrastructure, Tech, Safety, Economy, Social
+                subdistricts: [
+                    { name: 'ห้วยขวาง', focus: 'ผู้แทนเส้นเลือดฝอย', tactics: 'แก้ไขทางเท้า น้ำท่วมในซอยเล็ก เน้นการเข้าถึงตัวง่าย 24 ชม.' },
+                    { name: 'บางกะปิ', focus: 'ย่านคอนโดสมัยใหม่', tactics: 'เน้น Digital Campaign ชูระบบขยะอัจฉริยะ และการจัดการสิ่งแวดล้อม' },
+                    { name: 'สามเสนนอก', focus: 'ชุมชนปลอดภัย', tactics: 'ประสานผู้นำชุมชน ติดตั้งไฟส่องสว่างสะพานข้ามคลอง แก้ไขจุดเสี่ยงภัย' }
+                ]
+            },
+            {
+                id: 'wang-thonglang',
+                district: 'เขตวังทองหลาง',
+                candidate: 'กิตติพัฒน์ มีสุวรรณ (ยา)',
+                number: '3',
+                mainStrategy: 'วังทองหลาง 3D (ดีสามด้าน)',
+                goal: 'สร้างภาพลักษณ์ผู้ประสานงานมืออาชีพที่เป็นกลาง เข้าถึงทุกกลุ่มผู้ประกอบการและชุมชน',
+                focus: 'เศรษฐกิจร้านค้า, การจัดระเบียบพื้นที่, และความปลอดภัยจากอัคคีภัย',
+                chartScores: [70, 60, 80, 90, 85],
+                subdistricts: [
+                    { name: 'วังทองหลาง & คลองเจ้าคุณสิงห์', focus: 'ความปรองดองเชิงรุก', tactics: 'เจาะกลุ่มคะแนนเบื่อความขัดแย้ง ชูภาพลักษณ์ผู้ประสานงานอิสระ' },
+                    { name: 'สะพานสอง', focus: 'ศูนย์กลางการค้า', tactics: 'เสนอแผนกระตุ้นเศรษฐกิจร้านค้ารายย่อย และการจัดระเบียบที่จอดรถ' },
+                    { name: 'พลับพลา', focus: 'พื้นที่กิจกรรมหนาแน่น', tactics: 'เน้นคุมมลพิษทางเสียงและแผนป้องกันอัคคีภัยในย่านสถานบริการ' }
+                ]
+            },
+            {
+                id: 'ratchathewi',
+                district: 'เขตราชเทวี',
+                candidate: 'คมจักร จักรพันธุ์ (เคน)',
+                number: '1',
+                mainStrategy: 'ราชเทวีต้องการคนทำงาน ไม่ใช่โควตาพรรค',
+                goal: 'มุ่งเน้นความเป็นอิสระเพื่อความคล่องตัวในการแก้ปัญหาร่วมกับหน่วยงานรัฐวิสาหกิจ',
+                focus: 'ผลกระทบจากการก่อสร้าง, คุณภาพชีวิตรอบโรงพยาบาล, และชุมชนริมทางรถไฟ',
+                chartScores: [95, 65, 75, 70, 90],
+                subdistricts: [
+                    { name: 'ทุ่งพญาไท & ถนนพญาไท', focus: 'ย่านการแพทย์ระดับโลก', tactics: 'ยกระดับคุณภาพชีวิตรอบสถาบันการแพทย์ แก้ไขปัญหาฝุ่นก่อสร้างรถไฟฟ้า' },
+                    { name: 'ถนนเพชรบุรี (บ้านครัว)', focus: 'ชุมชนดั้งเดิม', tactics: 'สนับสนุนกิจกรรมทางศาสนาและอนุรักษ์พื้นที่ริมคลองอย่างยั่งยืน' },
+                    { name: 'มักกะสัน', focus: 'ย่านรถไฟแห่งอนาคต', tactics: 'ประสานรัฐวิสาหกิจแก้ปัญหาน้ำ-ไฟ ในชุมชนริมทางรถไฟให้เป็นระบบ' }
+                ]
+            },
+            {
+                id: 'phaya-thai',
+                district: 'เขตพญาไท',
+                candidate: 'นที ศิริธรรมวัฒน์ (เตี้ยง)',
+                number: '3',
+                mainStrategy: 'พญาไท เมืองอัจฉริยะ (Smart City)',
+                goal: 'ใช้เทคโนโลยีและการจัดการข้อมูลมาขับเคลื่อนการแก้ไขปัญหาเมืองในย่านคนทำงานรุ่นใหม่',
+                focus: 'ระบบคัดแยกขยะดิจิทัล, พื้นที่สีเขียว, และมาตรการ EIA เข้มงวด',
+                chartScores: [80, 95, 70, 75, 80],
+                subdistricts: [
+                    { name: 'สามเสนใน', focus: 'ที่อยู่อาศัยคุณภาพ', tactics: 'ใช้โมเดล Smart City ระบบคัดแยกขยะในคอนโด และเพิ่มพื้นที่สีเขียว' },
+                    { name: 'พญาไท', focus: 'ย่านเศรษฐกิจใหม่', tactics: 'ใช้แพลตฟอร์มดิจิทัลสื่อสาร และบังคับใช้มาตรการ EIA โครงการก่อสร้างใหญ่' }
+                ]
+            },
+            {
+                id: 'din-daeng',
+                district: 'เขตดินแดง',
+                candidate: 'รุ่งรวิน พรประกาสิต (พิม)',
+                number: '2',
+                mainStrategy: 'นักการตลาดเมือง พลิกฟื้นดินแดง',
+                goal: 'สร้างสมดุลระหว่างสวัสดิการชุมชนแฟลตดั้งเดิม กับการรับเรื่องร้องเรียนแบบดิจิทัลของคนย่านรัชดา',
+                focus: 'พยาบาลชุมชน, สวัสดิการผู้สูงอายุ, และระบบ Traffy Fondue',
+                chartScores: [75, 85, 80, 70, 95],
+                subdistricts: [
+                    { name: 'ดินแดง (แฟลต)', focus: 'สวัสดิการเพื่อมวลชน', tactics: 'จัดพยาบาลชุมชนเคลื่อนที่ และระบบดูแลผู้สูงอายุรายครัวเรือน' },
+                    { name: 'รัชดาภิเษก', focus: 'เมืองทันสมัย', tactics: 'เน้นแก้ปัญหา PM2.5 และระบบรับเรื่องร้องเรียนแบบ Real-time' }
+                ]
+            },
+            {
+                id: 'phra-nakhon',
+                district: 'เขตพระนคร',
+                candidate: 'ธีรกร ไหวดี (บอย)',
+                number: '4',
+                mainStrategy: 'คนทำงานที่ไม่ทิ้งใครไว้ข้างหลัง',
+                goal: 'ยกระดับเขตเมืองเก่าให้ปลอดภัยและเอื้อต่อการท่องเที่ยว โดยไม่ทิ้งผู้ประกอบการรายย่อย',
+                focus: 'คนไร้บ้าน, ทางเท้าเขตเมืองเก่า, และความปลอดภัยในซอยแคบ',
+                chartScores: [85, 55, 95, 85, 90],
+                subdistricts: [
+                    { name: 'เกาะรัตนโกสินทร์', focus: 'หัวใจท่องเที่ยว', tactics: 'ประคับประคองร้านค้าเล็กริมทาง ปรับปรุงทางเท้าเดินเท้าท่องเที่ยวได้' },
+                    { name: 'สนามหลวง & เสาชิงช้า', focus: 'พื้นที่สาธารณะ', tactics: 'เสนอแผนจัดการคนไร้บ้าน และบริการฟื้นฟูศักยภาพเพื่อความปลอดภัย' },
+                    { name: 'ข้าวสาร', focus: 'สตรีทฟู้ดโลก', tactics: 'การจัดการขยะสะสม และระบบระบายน้ำเพื่อรองรับนักท่องเที่ยว' },
+                    { name: 'พานถม / บางขุนพรหม', focus: 'ชุมชนหนาแน่น', tactics: 'เดินเคาะประตูบ้านรายครัวเรือน เน้นระบบดับเพลิงในซอยแคบ' }
+                ]
+            }
+        ];
+
+        let strategyRadar = null;
+
+        // Initialize App
+        function init() {
+            const nav = document.getElementById('district-nav');
+            strategyData.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'px-6 py-2 rounded-full border border-slate-300 font-medium text-slate-600 hover:bg-slate-100 transition-all';
+                btn.innerText = item.district;
+                btn.onclick = () => selectDistrict(item.id, btn);
+                btn.id = `btn-${item.id}`;
+                nav.appendChild(btn);
+            });
+        }
+
+        function selectDistrict(id, btnElement) {
+            // UI States
+            document.getElementById('welcome-section').classList.add('hidden');
+            document.getElementById('content-area').classList.remove('hidden');
+            
+            // Clear previous active buttons
+            document.querySelectorAll('#district-nav button').forEach(b => b.classList.remove('district-btn-active'));
+            btnElement.classList.add('district-btn-active');
+
+            const data = strategyData.find(d => d.id === id);
+            
+            // Update Text Content
+            document.getElementById('view-district-label').innerText = data.district;
+            document.getElementById('view-candidate-name').innerText = data.candidate;
+            document.getElementById('view-candidate-no').innerText = `เบอร์ ${data.number}`;
+            document.getElementById('view-main-strategy').innerText = data.mainStrategy;
+            document.getElementById('view-district-goal').innerText = data.goal;
+            document.getElementById('view-district-focus').innerText = data.focus;
+            document.getElementById('view-bg-no').innerText = data.number;
+
+            // Update Subdistrict Cards
+            const grid = document.getElementById('subdistricts-grid');
+            grid.innerHTML = '';
+            data.subdistricts.forEach(sub => {
+                const card = document.createElement('div');
+                card.className = 'subdistrict-card bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col h-full';
+                card.innerHTML = `
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-2xl">📍</span>
+                        <h4 class="text-xl font-bold text-indigo-900 leading-tight">แขวง${sub.name}</h4>
+                    </div>
+                    <div class="mb-4">
+                        <span class="text-xs font-bold text-amber-600 uppercase tracking-wider block mb-1">กลุ่มเป้าหมายหลัก</span>
+                        <div class="text-slate-800 font-medium">${sub.focus}</div>
+                    </div>
+                    <div class="mt-auto pt-4 border-t border-slate-100">
+                        <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block mb-1">ยุทธศาสตร์ปฏิบัติการ</span>
+                        <p class="text-sm text-slate-600 leading-relaxed">${sub.tactics}</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            // Update Chart
+            renderRadar(data.chartScores);
+
+            // Smooth scroll to top of content
+            window.scrollTo({ top: 150, behavior: 'smooth' });
+        }
+
+        function renderRadar(scores) {
+            const ctx = document.getElementById('strategyRadar').getContext('2d');
+            
+            if (strategyRadar) {
+                strategyRadar.destroy();
+            }
+
+            strategyRadar = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['โครงสร้างพื้นฐาน', 'เทคโนโลยี/นวัตกรรม', 'ความปลอดภัย', 'เศรษฐกิจพื้นที่', 'สวัสดิการสังคม'],
+                    datasets: [{
+                        label: 'น้ำหนักยุทธศาสตร์ (%)',
+                        data: scores,
+                        fill: true,
+                        backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                        borderColor: 'rgb(79, 70, 229)',
+                        pointBackgroundColor: 'rgb(245, 158, 11)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(79, 70, 229)'
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { display: true, color: 'rgba(0,0,0,0.05)' },
+                            suggestedMin: 40,
+                            suggestedMax: 100,
+                            ticks: { display: false, stepSize: 20 },
+                            pointLabels: {
+                                font: { family: 'Kanit', size: 12 },
+                                color: '#475569'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
